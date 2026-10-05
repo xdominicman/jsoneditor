@@ -1,0 +1,439 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>JSONEditor | Side by Side Compare</title>
+
+  <link href="../dist/jsoneditor.css" rel="stylesheet" type="text/css">
+  <script src="../dist/jsoneditor.js"></script>
+  <script src="https://bgrins.github.io/filereader.js/filereader.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2014-11-29/FileSaver.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel-bg: #ffffff;
+      --border: #dfe6f1;
+      --brand: #2563eb;
+      --brand-soft: #dbeafe;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --danger: #dc2626;
+      --success: #16a34a;
+      --warning: #d97706;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.5 Arial, sans-serif;
+    }
+
+    .app {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 18px;
+      padding: 12px 16px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+
+    .toolbar button,
+    .toolbar label {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: white;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .toolbar button.primary {
+      background: var(--brand);
+      border-color: var(--brand);
+      color: white;
+    }
+
+    .toolbar button.warning {
+      background: var(--warning);
+      border-color: var(--warning);
+      color: white;
+    }
+
+    .toolbar input[type="file"] {
+      display: none;
+    }
+
+    .two-panel {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      min-height: 640px;
+    }
+
+    .panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 620px;
+    }
+
+    .panel-header {
+      background: #f7f9fc;
+      border-bottom: 1px solid var(--border);
+      padding: 12px 14px;
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .panel-header small {
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .editor-wrap {
+      flex: 1;
+      min-height: 500px;
+      padding: 10px;
+    }
+
+    .editor-wrap > div {
+      height: 100%;
+      min-height: 500px;
+    }
+
+    .diff-box {
+      margin-top: 18px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .diff-box h3 {
+      margin: 0;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: #f7f9fc;
+    }
+
+    .diff-box pre {
+      margin: 0;
+      padding: 16px;
+      min-height: 180px;
+      max-height: 260px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font: 13px/1.5 Consolas, monospace;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 12px;
+      margin-left: 8px;
+    }
+
+    @media (max-width: 980px) {
+      .two-panel {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="toolbar">
+      <button id="loadLeft">Load Left</button>
+      <button id="loadRight">Load Right</button>
+      <button id="saveLeft">Save Left</button>
+      <button id="saveRight">Save Right</button>
+      <button id="formatLeft">Format Left</button>
+      <button id="formatRight">Format Right</button>
+      <button id="copyLeft">Copy Left</button>
+      <button id="copyRight">Copy Right</button>
+      <button id="compare" class="primary">Compare</button>
+      <button id="reset" class="warning">Reset Demo</button>
+      <span class="status">Tip: each editor also has built-in transform, sort, and validation menus.</span>
+    </div>
+
+    <input id="loadLeftFile" type="file" accept="application/json,.json,.txt">
+    <input id="loadRightFile" type="file" accept="application/json,.json,.txt">
+
+    <div class="two-panel">
+      <div class="panel">
+        <div class="panel-header">
+          <span>Left JSON</span>
+          <small id="leftMeta">Tree mode</small>
+        </div>
+        <div id="leftEditor" class="editor-wrap"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <span>Right JSON</span>
+          <small id="rightMeta">Tree mode</small>
+        </div>
+        <div id="rightEditor" class="editor-wrap"></div>
+      </div>
+    </div>
+
+    <div class="diff-box">
+      <h3>Diff</h3>
+      <pre id="diffOutput">No comparison run yet.</pre>
+    </div>
+  </div>
+
+  <script>
+    const leftMeta = document.getElementById('leftMeta')
+    const rightMeta = document.getElementById('rightMeta')
+
+    function makeEditor (container, initialValue) {
+      const editor = new JSONEditor(container, {
+        mode: 'tree',
+        modes: ['tree', 'code', 'text', 'preview'],
+        mainMenuBar: true,
+        navigationBar: true,
+        statusBar: true,
+        indentation: 2,
+        sortObjectKeys: false
+      })
+
+      editor.set(initialValue)
+      return editor
+    }
+
+    const leftEditor = makeEditor(document.getElementById('leftEditor'), {
+      id: 101,
+      name: 'Alpha',
+      active: true,
+      tags: ['core', 'dev'],
+      settings: { theme: 'dark', retries: 3 },
+      metadata: { createdBy: 'team-a' }
+    })
+
+    const rightEditor = makeEditor(document.getElementById('rightEditor'), {
+      id: 101,
+      name: 'Alpha Updated',
+      active: false,
+      tags: ['core', 'prod'],
+      settings: { theme: 'light', retries: 5 },
+      metadata: { createdBy: 'team-b' },
+      extra: { version: 2 }
+    })
+
+    leftMeta.textContent = 'JSON ' + JSON.stringify(leftEditor.get(), null, 0).length + ' chars'
+    rightMeta.textContent = 'JSON ' + JSON.stringify(rightEditor.get(), null, 0).length + ' chars'
+
+    function formatEditor (editor) {
+      try {
+        const value = editor.get()
+        editor.set(value)
+        editor.expandAll && editor.expandAll()
+      } catch (err) {
+        alert('Unable to format current JSON: ' + err.message)
+      }
+    }
+
+    function safePreview (value) {
+      if (typeof value === 'string') return JSON.stringify(value)
+      if (typeof value === 'undefined') return 'undefined'
+      if (value === null) return 'null'
+      if (typeof value === 'function') return '[function]'
+      try {
+        return JSON.stringify(value)
+      } catch (err) {
+        return String(value)
+      }
+    }
+
+    function diffObjects (left, right, path, messages) {
+      const currentMessages = messages || []
+      const leftIsObject = left !== null && typeof left === 'object' && !Array.isArray(left)
+      const rightIsObject = right !== null && typeof right === 'object' && !Array.isArray(right)
+
+      if (leftIsObject || rightIsObject) {
+        const leftKeys = leftIsObject ? Object.keys(left) : []
+        const rightKeys = rightIsObject ? Object.keys(right) : []
+        const allKeys = Array.from(new Set(leftKeys.concat(rightKeys))).sort()
+
+        for (const key of allKeys) {
+          const nextPath = path ? path + '.' + key : key
+          const hasLeft = Object.prototype.hasOwnProperty.call(left || {}, key)
+          const hasRight = Object.prototype.hasOwnProperty.call(right || {}, key)
+
+          if (!hasLeft) {
+            currentMessages.push('+ ' + nextPath + ': ' + safePreview(right[key]))
+            continue
+          }
+
+          if (!hasRight) {
+            currentMessages.push('- ' + nextPath + ': ' + safePreview(left[key]))
+            continue
+          }
+
+          diffObjects(left[key], right[key], nextPath, currentMessages)
+        }
+
+        return currentMessages
+      }
+
+      if (Array.isArray(left) || Array.isArray(right)) {
+        const leftArray = Array.isArray(left) ? left : []
+        const rightArray = Array.isArray(right) ? right : []
+        const maxLength = Math.max(leftArray.length, rightArray.length)
+
+        for (let i = 0; i < maxLength; i++) {
+          const nextPath = path ? path + '[' + i + ']' : '[' + i + ']'
+          if (i >= leftArray.length) {
+            currentMessages.push('+ ' + nextPath + ': ' + safePreview(rightArray[i]))
+            continue
+          }
+          if (i >= rightArray.length) {
+            currentMessages.push('- ' + nextPath + ': ' + safePreview(leftArray[i]))
+            continue
+          }
+          diffObjects(leftArray[i], rightArray[i], nextPath, currentMessages)
+        }
+
+        return currentMessages
+      }
+
+      if (JSON.stringify(left) !== JSON.stringify(right)) {
+        currentMessages.push('~ ' + path + ': ' + safePreview(left) + ' -> ' + safePreview(right))
+      }
+
+      return currentMessages
+    }
+
+    function compareEditors () {
+      try {
+        const left = leftEditor.get()
+        const right = rightEditor.get()
+        const diff = diffObjects(left, right, 'root', [])
+
+        if (!diff.length) {
+          document.getElementById('diffOutput').textContent = 'No differences found.'
+          return
+        }
+
+        document.getElementById('diffOutput').textContent = diff.join('\n')
+      } catch (err) {
+        document.getElementById('diffOutput').textContent = 'Comparison failed: ' + err.message
+      }
+    }
+
+    function saveEditor (editor, fileNameHint) {
+      const defaultName = fileNameHint || 'document.json'
+      const suggested = window.prompt('Save as...', defaultName)
+      if (suggested === null || suggested === '') return
+
+      const safeName = suggested.toLowerCase().endsWith('.json') ? suggested : suggested + '.json'
+      const text = JSON.stringify(editor.get(), null, 2)
+      const blob = new Blob([text], { type: 'application/json;charset=utf-8' })
+      saveAs(blob, safeName)
+    }
+
+    function attachLoadHandler (inputId, editor) {
+      const input = document.getElementById(inputId)
+      FileReaderJS.setupInput(input, {
+        readAsDefault: 'Text',
+        on: {
+          load: function (event, file) {
+            try {
+              const raw = event.target.result
+              const value = JSON.parse(raw)
+              editor.set(value)
+              document.getElementById('diffOutput').textContent = 'Loaded file: ' + file.name
+            } catch (err) {
+              alert('This file is not valid JSON: ' + err.message)
+            }
+          }
+        }
+      })
+    }
+
+    document.getElementById('loadLeft').onclick = function () {
+      document.getElementById('loadLeftFile').click()
+    }
+    document.getElementById('loadRight').onclick = function () {
+      document.getElementById('loadRightFile').click()
+    }
+    document.getElementById('saveLeft').onclick = function () {
+      saveEditor(leftEditor, 'left.json')
+    }
+    document.getElementById('saveRight').onclick = function () {
+      saveEditor(rightEditor, 'right.json')
+    }
+    document.getElementById('formatLeft').onclick = function () {
+      formatEditor(leftEditor)
+    }
+    document.getElementById('formatRight').onclick = function () {
+      formatEditor(rightEditor)
+    }
+    document.getElementById('copyLeft').onclick = function () {
+      const text = JSON.stringify(leftEditor.get(), null, 2)
+      navigator.clipboard.writeText(text).catch(() => {
+        alert('Copy failed: the browser blocked clipboard access.')
+      })
+    }
+    document.getElementById('copyRight').onclick = function () {
+      const text = JSON.stringify(rightEditor.get(), null, 2)
+      navigator.clipboard.writeText(text).catch(() => {
+        alert('Copy failed: the browser blocked clipboard access.')
+      })
+    }
+    document.getElementById('compare').onclick = compareEditors
+
+    document.getElementById('reset').onclick = function () {
+      leftEditor.set({
+        id: 101,
+        name: 'Alpha',
+        active: true,
+        tags: ['core', 'dev'],
+        settings: { theme: 'dark', retries: 3 },
+        metadata: { createdBy: 'team-a' }
+      })
+
+      rightEditor.set({
+        id: 101,
+        name: 'Alpha Updated',
+        active: false,
+        tags: ['core', 'prod'],
+        settings: { theme: 'light', retries: 5 },
+        metadata: { createdBy: 'team-b' },
+        extra: { version: 2 }
+      })
+
+      document.getElementById('diffOutput').textContent = 'Demo reset. Click Compare to recalculate.'
+    }
+
+    attachLoadHandler('loadLeftFile', leftEditor)
+    attachLoadHandler('loadRightFile', rightEditor)
+
+    compareEditors()
+  </script>
+</body>
+</html>

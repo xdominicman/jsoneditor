@@ -33,6 +33,7 @@
     "javascript-natural-sort": "^0.7.1",
     "jmespath": "^0.16.0",
     "json-source-map": "^0.6.1",
+    "jsoneditor": "^10.4.3",
     "jsonrepair": "^3.8.1",
     "picomodal": "^3.0.0",
     "vanilla-picker": "^2.12.3"
@@ -75,5 +76,8 @@
       "src/js/assets",
       "examples/react*"
     ]
+  },
+  "allowScripts": {
+    "@parcel/watcher@2.6.0": true
   }
 }

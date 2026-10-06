@@ -210,10 +210,112 @@
     const leftMeta = document.getElementById('leftMeta')
     const rightMeta = document.getElementById('rightMeta')
 
+    JSONEditor.registerMode({
+      mode: 'table',
+      data: 'json',
+      mixin: {
+        create: function (container, options) {
+          this.container = container
+          this.options = options
+          this.dom = {
+            tableWrap: document.createElement('div')
+          }
+          this.dom.tableWrap.style.width = '100%'
+          this.dom.tableWrap.style.height = '100%'
+          this.dom.tableWrap.style.overflow = 'auto'
+          this.dom.tableWrap.style.padding = '8px'
+          container.innerHTML = ''
+          container.appendChild(this.dom.tableWrap)
+          this.refresh()
+        },
+        destroy: function () {
+          if (this.dom && this.dom.tableWrap && this.dom.tableWrap.parentNode) {
+            this.dom.tableWrap.parentNode.removeChild(this.dom.tableWrap)
+          }
+        },
+        get: function () {
+          return this.json
+        },
+        getText: function () {
+          return JSON.stringify(this.json, null, 2)
+        },
+        set: function (json) {
+          this.json = json || {}
+          this.refresh()
+        },
+        setText: function (jsonText) {
+          try {
+            this.json = JSON.parse(jsonText)
+          } catch (err) {
+            this.json = {}
+          }
+          this.refresh()
+        },
+        refresh: function () {
+          if (!this.dom || !this.dom.tableWrap) return
+
+          const value = this.json || {}
+          const rows = Array.isArray(value) ? value : [value]
+          const validRows = rows.filter(item => item && typeof item === 'object' && !Array.isArray(item))
+
+          if (!validRows.length) {
+            this.dom.tableWrap.innerHTML = '<div style="padding:16px;color:#6b7280;">Table mode supports an array of objects or a single object.</div>'
+            return
+          }
+
+          const keys = []
+          for (const row of validRows) {
+            for (const key of Object.keys(row)) {
+              if (!keys.includes(key)) keys.push(key)
+            }
+          }
+
+          const table = document.createElement('table')
+          table.style.width = '100%'
+          table.style.borderCollapse = 'collapse'
+          table.style.fontSize = '13px'
+          table.style.background = '#fff'
+
+          const head = document.createElement('thead')
+          const headRow = document.createElement('tr')
+          for (const key of keys) {
+            const th = document.createElement('th')
+            th.textContent = key
+            th.style.border = '1px solid #dfe6f1'
+            th.style.padding = '8px 10px'
+            th.style.background = '#f3f7ff'
+            th.style.textAlign = 'left'
+            headRow.appendChild(th)
+          }
+          head.appendChild(headRow)
+          table.appendChild(head)
+
+          const body = document.createElement('tbody')
+          for (const row of validRows) {
+            const tr = document.createElement('tr')
+            for (const key of keys) {
+              const td = document.createElement('td')
+              const cellValue = row[key]
+              td.textContent = cellValue === null || typeof cellValue === 'undefined' ? '' : String(cellValue)
+              td.style.border = '1px solid #dfe6f1'
+              td.style.padding = '8px 10px'
+              td.style.verticalAlign = 'top'
+              tr.appendChild(td)
+            }
+            body.appendChild(tr)
+          }
+          table.appendChild(body)
+
+          this.dom.tableWrap.innerHTML = ''
+          this.dom.tableWrap.appendChild(table)
+        }
+      }
+    })
+
     function makeEditor (container, initialValue) {
       const editor = new JSONEditor(container, {
         mode: 'tree',
-        modes: ['tree', 'code', 'text', 'preview'],
+        modes: ['tree', 'code', 'table'],
         mainMenuBar: true,
         navigationBar: true,
         statusBar: true,
